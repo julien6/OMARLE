@@ -11,7 +11,6 @@ from pettingzoo.utils.conversions import parallel_wrapper_fn, to_parallel
 
 def env(**kwargs):
     env = raw_env(**kwargs)
-    env = wrappers.OrderEnforcingWrapper(env)
     return env
 
 
