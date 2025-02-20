@@ -1,5 +1,5 @@
 gymnasium>=0.26.0
-numpy>=1.19.5
-pettingzoo>=1.18.1
+numpy
+pettingzoo
 pygame>=2.0.0
 Pillow>=8.0.0

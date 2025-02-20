@@ -1,3 +1,4 @@
+import os
 import pygame
 import numpy as np
 
@@ -75,6 +76,8 @@ def draw_grid(screen, grid, agent_positions, agent_states):
             # Dessiner une image si elle existe
             image_path = IMAGES.get(cell_value)
             if image_path:
+                image_path = os.path.join(os.path.dirname(
+                    os.path.abspath(__file__)), image_path)
                 image = pygame.image.load(image_path)
                 image = pygame.transform.scale(image, (CELL_SIZE, CELL_SIZE))
                 screen.blit(image, (col * CELL_SIZE, row * CELL_SIZE))
@@ -82,6 +85,8 @@ def draw_grid(screen, grid, agent_positions, agent_states):
     # Dessiner les agents par-dessus la grille
     for agent, (row, col) in agent_positions.items():
         agent_image_path = IMAGES.get(agent_states[agent], "asset/agent.png")
+        agent_image_path = os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), agent_image_path)
         agent_image = pygame.image.load(agent_image_path)
         agent_image = pygame.transform.scale(
             agent_image, (CELL_SIZE, CELL_SIZE))
