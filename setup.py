@@ -8,14 +8,17 @@ def parse_requirements(filename):
 setup(
     name="omarle",
     version="0.1.0",
-    # author="Julien Soule",
-    # author_email="julien.soule@lcis.grenoble-inp.fr",
+    author="Julien Soule",
+    author_email="julien.soule@lcis.grenoble-inp.fr",
     description="A package containing Atari-like Organizational-oriented MARL environments.",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    url="https://github.com/tonnom/omarle",
-    packages=find_packages(where='omarle'),
-    package_dir={"": "omarle"},
+    url="https://github.com/julien6/OMARLE",
+    packages=find_packages(),
+    include_package_data=True,
+    package_data={
+        "omarle.warehouse_management.env.asset": ["*.png"]
+    },
     install_requires=parse_requirements("requirements.txt"),
     classifiers=[
         "Programming Language :: Python :: 3",
