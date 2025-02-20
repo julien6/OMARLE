@@ -2,7 +2,7 @@ import os
 import pygame
 import numpy as np
 
-from warehouse_management import env
+from omarle.warehouse_management.warehouse_management_v0 import env
 
 # Dimensions de la grille et des cellules
 GRID_SIZE = (10, 10)

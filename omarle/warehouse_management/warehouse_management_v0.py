@@ -1,4 +1,4 @@
-from env.warehouse_management import (
+from omarle.warehouse_management.env.warehouse_management import (
     env,
     parallel_env,
     raw_env,
