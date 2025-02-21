@@ -6,18 +6,18 @@ from pettingzoo.utils.env import ParallelEnv
 from pettingzoo.utils import wrappers
 from typing import Dict, Tuple
 from copy import deepcopy
-from pettingzoo.utils.conversions import parallel_wrapper_fn, to_parallel
+from pettingzoo.utils.conversions import from_parallel_wrapper
+
+
+def raw_env(kwargs): from_parallel_wrapper(parallel_env(**kwargs))
 
 
 def env(**kwargs):
-    env = raw_env(**kwargs)
+    env = parallel_env(**kwargs)
     return env
 
 
-parallel_env = parallel_wrapper_fn(env)
-
-
-def raw_env(grid_size=(10, 10), agents_number=3, view_size=3):
+def parallel_env(grid_size=(10, 10), agents_number=3, view_size=3, seed=42, max_cycles=100):
     """
     Factory function to create the Warehouse Management environment.
     Args:
@@ -26,7 +26,7 @@ def raw_env(grid_size=(10, 10), agents_number=3, view_size=3):
         view_size (int): Observation range of each agent.
     """
     environment = WarehouseManagementEnv(
-        grid_size=grid_size, agents_number=agents_number, view_size=view_size)
+        grid_size=grid_size, agents_number=agents_number, view_size=view_size, seed=seed, max_cycles=max_cycles)
     # return wrappers.CaptureStdoutWrapper(environment)
     return environment
 
@@ -34,7 +34,7 @@ def raw_env(grid_size=(10, 10), agents_number=3, view_size=3):
 class WarehouseManagementEnv(ParallelEnv):
     metadata = {"render.modes": ["human"], "name": "warehouse_management_v1"}
 
-    def __init__(self, grid_size=(10, 10), agents_number=3, view_size=3, seed=42):
+    def __init__(self, grid_size=(10, 10), agents_number=3, view_size=3, seed=42, max_cycles=100):
         """
         Initialize the Warehouse Management environment.
         Args:
@@ -48,15 +48,16 @@ class WarehouseManagementEnv(ParallelEnv):
         self.grid_size = grid_size
         self.agents_number = agents_number
         self.view_size = view_size
+        self.max_cycles = max_cycles
 
         # Agent and action spaces
         self.agents = [f"agent_{i}" for i in range(agents_number)]
         self.possible_agents = self.agents[:]
         # 0: noop, 1: up, 2: down, 3: left, 4: right, 5: pick, 6: drop
-        self.action_space = {agent: Discrete(
+        self.action_spaces = {agent: Discrete(
             7, seed=seed) for agent in self.agents}
-        self.observation_space = {agent: Box(
-            0, 14, (view_size * 2 + 1, view_size * 2 + 1, 1), np.int32, seed=seed) for agent in self.agents}
+        self.observation_spaces = {agent: Box(
+            0, 14, ((view_size * 2 + 1) ** 2,), np.int64, seed=seed) for agent in self.agents}
 
         # Cell types (adjusted based on descriptions)
         self.EMPTY = 1
@@ -85,9 +86,10 @@ class WarehouseManagementEnv(ParallelEnv):
         """
         self._initialize_grid()
         self._initialize_agents()
-        self.terminated = {agent: False for agent in self.agents}
-        self.truncated = {agent: False for agent in self.agents}
+        self.dones = {agent: False for agent in self.agents}
         self.rewards = {agent: 0 for agent in self.agents}
+        self.infos = {agent: {} for agent in self.agents}
+        self.num_cycle = 0
         return self.observe()
 
     def _initialize_grid(self):
@@ -144,7 +146,8 @@ class WarehouseManagementEnv(ParallelEnv):
             padded_obs = np.full(
                 (self.view_size * 2 + 1, self.view_size * 2 + 1), self.EMPTY)
             padded_obs[: obs.shape[0], : obs.shape[1]] = obs
-            observations[agent] = padded_obs[..., np.newaxis]
+            obs_flat = padded_obs.flatten()
+            observations[agent] = obs_flat  # padded_obs[..., np.newaxis]
         return observations
 
     def step(self, actions: Dict[str, int]):
@@ -155,7 +158,8 @@ class WarehouseManagementEnv(ParallelEnv):
         """
         previous_state = deepcopy(self.grid)
         for agent, action in actions.items():
-            if self.terminated[agent]:
+
+            if self.dones[agent]:
                 continue
 
             if action in [1, 2, 3, 4]:  # Movement
@@ -168,10 +172,20 @@ class WarehouseManagementEnv(ParallelEnv):
         # Compute rewards and check terminations
         self._update_rewards(previous_state)
 
-        self.terminated = {agent: self._check_termination(
-            agent) for agent in self.agents}
+        self.num_cycle += 1
 
-        return self.observe(), self.rewards, self.terminated, self.truncated
+        for ag in self.agents:
+            self.dones[ag] = self.dones[ag] or self._check_termination(ag)
+            self.dones["__all__"] = True
+
+        if self.num_cycle >= self.max_cycles:
+            self.dones["__all__"] = True
+            for ag in self.agents:
+                self.dones[ag] = True
+
+        self.infos = {agent: {} for agent in self.agents}
+
+        return self.observe(), self.rewards, self.dones, self.infos
 
     def _move_agent(self, agent: str, action: int):
         """
@@ -207,10 +221,11 @@ class WarehouseManagementEnv(ParallelEnv):
                     next_x, next_y = x + direction[0] if 0 <= x + direction[0] and x + direction[0] < self.grid.shape[0] else x, \
                         y + direction[1] if 0 <= y + direction[1] and y + \
                         direction[1] <= self.grid.shape[1] else y
-                    if self.grid[next_x, next_y] == transform_data[0]:
-                        self.agent_states[agent] = transform_data[1]
-                        self.grid[next_x, next_y] = transform_data[2]
-                        return
+                    if next_x > 0 and next_x < self.grid_size[0] and next_y > 0 and next_y < self.grid_size[1]:
+                        if self.grid[next_x, next_y] == transform_data[0]:
+                            self.agent_states[agent] = transform_data[1]
+                            self.grid[next_x, next_y] = transform_data[2]
+                            return
 
     def _drop_object(self, agent: str):
         """

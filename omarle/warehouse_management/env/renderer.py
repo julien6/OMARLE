@@ -126,7 +126,7 @@ def run_visualization():
         # Actions automatiques pour les autres agents
         for agent in warehouse_env.agents:
             if agent != manual_agent:
-                actions[agent] = warehouse_env.action_space[agent].sample()
+                actions[agent] = warehouse_env.action_space(agent).sample()
 
         # Effectuer une étape dans l'environnement
         observations, rewards, terminated, truncated = warehouse_env.step(actions)

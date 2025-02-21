@@ -1,4 +1,4 @@
-from env.moving_company import (
+from omarle.movingcompany.env.moving_company import (
     env,
     parallel_env,
     raw_env,

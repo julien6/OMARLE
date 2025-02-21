@@ -1,19 +1,20 @@
 import copy
 import functools
 import json
+import os
 import gymnasium
 import numpy as np
 import random
 
 from typing import Dict, Union
-from gym.spaces import Discrete, MultiDiscrete
+from gym.spaces import Discrete, Box
 from pettingzoo import AECEnv
 from pettingzoo.utils import agent_selector, wrappers
 from gymnasium.utils import EzPickle
 from PIL import Image
 from pprint import pprint
 from pettingzoo.utils.conversions import parallel_wrapper_fn, to_parallel
-from renderer import GridRenderer
+from omarle.movingcompany.env.renderer import GridRenderer
 from pettingzoo.utils.wrappers import BaseWrapper
 
 FPS = 20
@@ -40,7 +41,7 @@ class raw_env(AECEnv, EzPickle):
 
     metadata = {
         "name": "moving_company_v0",
-        "render_modes": ["human", "rgb_array", "grid"],
+        "render.modes": ["human", "rgb_array", "grid"],
         "is_parallelizable": True,
         "render_fps": FPS,
         "has_manual_policy": True,
@@ -87,8 +88,8 @@ class raw_env(AECEnv, EzPickle):
             render_mode=render_mode
         )
 
-        self.observation_spaces = {agent: MultiDiscrete(
-            [6] * 3**2, seed=self._seed) for agent in self.possible_agents}
+        self.observation_spaces = {agent: Box(
+            0, 6, (3**2,), dtype=np.int64, seed=self._seed) for agent in self.possible_agents}
 
         self.action_spaces = {agent: Discrete(
             7, seed=self._seed) for agent in self.possible_agents}
@@ -178,7 +179,7 @@ class raw_env(AECEnv, EzPickle):
 
     def generate_action_masks(self, agent_name: str):
 
-        action_mask = np.zeros(self.action_space(agent_name).n, dtype=np.int8)
+        action_mask = np.zeros(self.action_space(agent_name).n, dtype=np.int64)
 
         for action in range(self.action_space(agent_name).n):
 
@@ -245,7 +246,7 @@ class raw_env(AECEnv, EzPickle):
         # [ ][X][ ]
         # [ ][ ][ ]
         # Each cell has 6 possible states: Wall (0), Empty (1), Agent (2), Agent+Package (3), EmptyPackageZone (4), NonEmptyPackageZone (5)
-        return MultiDiscrete([6] * 3**2, seed=self._seed)
+        return self.observation_spaces[agent]
 
     @functools.lru_cache(maxsize=None)
     def action_space(self, agent):
@@ -331,6 +332,7 @@ class raw_env(AECEnv, EzPickle):
         self.observations = {agent: self.observe(
             agent) for agent in self.agents}
         self.num_cycle = 0
+        self._best_reward = 0
         """
         Our agent_selector utility allows easy cyclic stepping through the agents list.
         """
@@ -399,80 +401,11 @@ class NumpyEncoder(json.JSONEncoder):
         return json.JSONEncoder.default(self, obj)
 
 
-if __name__ == '__main__':
+def main():
 
-    # e = parallel_env(size=10, seed=42, render_mode="rgb_array")
-
-    # print(type(e))
-
-    e = raw_env(size=10, seed=42, render_mode="rgb_array")
-    # e = env(size=10, seed=42, render_mode="rgb_array")
-
-    # e = to_parallel(e)
-
-    e.reset()
-
-    print(e.observation_space("agent_0"))
-
-    """
-    label_to_obj: Dict = {
-        "a0": 0,
-        "a1": 1,
-        "a2": 2,
-        "a3": 3,
-        "a4": 4,
-        "a5": 5,
-        "a6": 6,
-
-        "o01": np.array([0, 1, 0, 0, 2, 0, 0, 1, 0]),  # 0 -> 1
-        "o02": np.array([0, 5, 0, 0, 2, 0, 0, 1, 0]),  # 1 -> 5
-        "o03": np.array([0, 4, 0, 0, 3, 0, 0, 1, 0]),  # 2 -> 2
-        "o04": np.array([0, 1, 0, 0, 3, 0, 0, 1, 0]),  # 2 -> 2
-        "o05": np.array([0, 1, 0, 0, 3, 0, 0, 4, 1]),  # 3 -> 6
-        "o06": np.array([0, 1, 0, 0, 3, 0, 0, 4, 2]),  # 3 -> 6
-        "o07": np.array([0, 1, 0, 0, 2, 0, 0, 5, 1]),  # -> 0
-        "o08": np.array([0, 1, 0, 0, 2, 0, 0, 5, 2]),  # -> 0
-        "o09": np.array([0, 1, 0, 0, 2, 0, 0, 4, 3]),  # -> 0
-        "o010": np.array([0, 1, 0, 0, 2, 0, 0, 4, 1]),  # -> 0
-
-        "o11": np.array([1, 0, 0, 5, 2, 1, 0, 0, 0]),  # 1 -> 5
-        "o12": np.array([2, 0, 0, 5, 2, 1, 0, 0, 0]),  # 1 -> 5
-        "o13": np.array([1, 0, 0, 4, 3, 1, 0, 0, 0]),  # 2 -> 4
-        "o14": np.array([2, 0, 0, 4, 3, 1, 0, 0, 0]),  # 2 -> 4
-        "o15": np.array([0, 0, 0, 1, 3, 1, 0, 0, 0]),  # 2 -> 4
-        "o16": np.array([0, 0, 0, 1, 2, 1, 0, 0, 0]),  # 0 -> 3
-        "o17": np.array([0, 0, 1, 1, 3, 4, 0, 0, 0]),  # 3 -> 6
-        "o18": np.array([0, 0, 2, 1, 3, 4, 0, 0, 0]),  # 3 -> 6
-        "o19": np.array([0, 0, 1, 1, 2, 5, 0, 0, 0]),  # -> 0
-        "o110": np.array([0, 0, 2, 1, 2, 5, 0, 0, 0]),  # -> 0
-        "o111": np.array([1, 0, 0, 4, 2, 1, 0, 0, 0]),  # -> 0
-        "o112": np.array([3, 0, 0, 4, 2, 1, 0, 0, 0]),  # -> 0
-        "o113": np.array([0, 0, 1, 1, 2, 4, 0, 0, 0]),  # -> 0
-        "o114": np.array([0, 0, 3, 1, 2, 4, 0, 0, 0]),  # -> 0
-
-        "o21": np.array([0, 1, 0, 0, 2, 0, 1, 5, 0]),  # 2 -> 5
-        "o22": np.array([0, 1, 0, 0, 2, 0, 2, 5, 0]),  # 2 -> 5
-        "o23": np.array([0, 1, 0, 0, 3, 0, 1, 4, 0]),  # 3 -> 1
-        "o25": np.array([0, 4, 0, 0, 2, 0, 0, 1, 0]),  # 1 -> 2
-        "o26": np.array([0, 1, 0, 0, 2, 0, 1, 4, 0]),  # -> 0
-        "o27": np.array([0, 1, 0, 0, 2, 0, 3, 4, 0])  # -> 0
-    }
-
-    obj_to_label = {str(v): k for k, v in label_to_obj.items()}
+    e = parallel_env(size=10, seed=42, render_mode="rgb_array")
 
     init_obs = e.reset()
-
-    print(init_obs)
-
-    joint_history = {agent: [] for agent in e.aec_env.agents}
-
-    for agent in joint_history:
-        ag_obs = init_obs[agent]
-        lab = obj_to_label.get(str(ag_obs), None)
-        if lab is not None:
-            joint_history[agent] += [lab]
-
-    print(joint_history)
 
     _perfect_policy = [5, 0, 0, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 2, 0, 2, 6, 0, 0, 0, 5, 0, 0, 4, 0, 0, 4,
                        0, 0, 4, 0, 0, 4, 0, 0, 4, 0, 0, 6, 0, 0, 0, 5, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 6]
@@ -492,8 +425,6 @@ if __name__ == '__main__':
 
     frame_list = [Image.fromarray(e.render())]
 
-    transition_data = []
-
     cumulative_reward = 0
     i = 0
     while e.agents:
@@ -503,22 +434,8 @@ if __name__ == '__main__':
         actions = {agent: perfect_policy[agent].pop(0) if len(
             perfect_policy[agent]) > 0 else 0 for agent in e.agents}
 
-        for agent in joint_history:
-            ag_obs = actions[agent]
-            lab = obj_to_label.get(str(ag_obs), None)
-            if lab is not None:
-                joint_history[agent] += [lab]
-
-        transition_data += [copy.deepcopy(e.aec_env.grid)]
-
         observations, rewards, dones, infos = e.step(
             actions)
-
-        for agent in joint_history:
-            ag_obs = observations[agent]
-            lab = obj_to_label.get(str(ag_obs), None)
-            if lab is not None:
-                joint_history[agent] += [lab]
 
         cumulative_reward += rewards["agent_0"]
 
@@ -527,14 +444,58 @@ if __name__ == '__main__':
 
         i += 1
 
-    print(joint_history)
-
-    # print(json.dumps(transition_data, cls=NumpyEncoder))
-
     print("Cumulative Reward: ", cumulative_reward)
 
     frame_list[0].save("out.gif", save_all=True,
                        append_images=frame_list[1:], duration=5, loop=0)
 
     e.close()
-    """
+
+    # label_to_obj: Dict = {
+    #     "a0": 0,
+    #     "a1": 1,
+    #     "a2": 2,
+    #     "a3": 3,
+    #     "a4": 4,
+    #     "a5": 5,
+    #     "a6": 6,
+
+    #     "o01": np.array([0, 1, 0, 0, 2, 0, 0, 1, 0]),  # 0 -> 1
+    #     "o02": np.array([0, 5, 0, 0, 2, 0, 0, 1, 0]),  # 1 -> 5
+    #     "o03": np.array([0, 4, 0, 0, 3, 0, 0, 1, 0]),  # 2 -> 2
+    #     "o04": np.array([0, 1, 0, 0, 3, 0, 0, 1, 0]),  # 2 -> 2
+    #     "o05": np.array([0, 1, 0, 0, 3, 0, 0, 4, 1]),  # 3 -> 6
+    #     "o06": np.array([0, 1, 0, 0, 3, 0, 0, 4, 2]),  # 3 -> 6
+    #     "o07": np.array([0, 1, 0, 0, 2, 0, 0, 5, 1]),  # -> 0
+    #     "o08": np.array([0, 1, 0, 0, 2, 0, 0, 5, 2]),  # -> 0
+    #     "o09": np.array([0, 1, 0, 0, 2, 0, 0, 4, 3]),  # -> 0
+    #     "o010": np.array([0, 1, 0, 0, 2, 0, 0, 4, 1]),  # -> 0
+
+    #     "o11": np.array([1, 0, 0, 5, 2, 1, 0, 0, 0]),  # 1 -> 5
+    #     "o12": np.array([2, 0, 0, 5, 2, 1, 0, 0, 0]),  # 1 -> 5
+    #     "o13": np.array([1, 0, 0, 4, 3, 1, 0, 0, 0]),  # 2 -> 4
+    #     "o14": np.array([2, 0, 0, 4, 3, 1, 0, 0, 0]),  # 2 -> 4
+    #     "o15": np.array([0, 0, 0, 1, 3, 1, 0, 0, 0]),  # 2 -> 4
+    #     "o16": np.array([0, 0, 0, 1, 2, 1, 0, 0, 0]),  # 0 -> 3
+    #     "o17": np.array([0, 0, 1, 1, 3, 4, 0, 0, 0]),  # 3 -> 6
+    #     "o18": np.array([0, 0, 2, 1, 3, 4, 0, 0, 0]),  # 3 -> 6
+    #     "o19": np.array([0, 0, 1, 1, 2, 5, 0, 0, 0]),  # -> 0
+    #     "o110": np.array([0, 0, 2, 1, 2, 5, 0, 0, 0]),  # -> 0
+    #     "o111": np.array([1, 0, 0, 4, 2, 1, 0, 0, 0]),  # -> 0
+    #     "o112": np.array([3, 0, 0, 4, 2, 1, 0, 0, 0]),  # -> 0
+    #     "o113": np.array([0, 0, 1, 1, 2, 4, 0, 0, 0]),  # -> 0
+    #     "o114": np.array([0, 0, 3, 1, 2, 4, 0, 0, 0]),  # -> 0
+
+    #     "o21": np.array([0, 1, 0, 0, 2, 0, 1, 5, 0]),  # 2 -> 5
+    #     "o22": np.array([0, 1, 0, 0, 2, 0, 2, 5, 0]),  # 2 -> 5
+    #     "o23": np.array([0, 1, 0, 0, 3, 0, 1, 4, 0]),  # 3 -> 1
+    #     "o25": np.array([0, 4, 0, 0, 2, 0, 0, 1, 0]),  # 1 -> 2
+    #     "o26": np.array([0, 1, 0, 0, 2, 0, 1, 4, 0]),  # -> 0
+    #     "o27": np.array([0, 1, 0, 0, 2, 0, 3, 4, 0])  # -> 0
+    # }
+
+    # obj_to_label = {str(v): k for k, v in label_to_obj.items()}
+
+
+if __name__ == '__main__':
+    main()
