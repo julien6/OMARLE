@@ -1,5 +1,7 @@
 import gym
 import numpy as np
+import os
+import pygame
 
 from gym.spaces import Box, Discrete
 from pettingzoo.utils.env import ParallelEnv
@@ -33,6 +35,45 @@ def parallel_env(grid_size=(10, 10), agents_number=3, view_size=3, seed=42, max_
 
 class WarehouseManagementEnv(ParallelEnv):
     metadata = {"render.modes": ["human"], "name": "warehouse_management_v1"}
+
+    CELL_SIZE = 50  # Taille d'une cellule en pixels
+    WINDOW_SIZE = (10 * CELL_SIZE, 10 * CELL_SIZE)  # Taille de la fenêtre
+
+    # Couleurs et images associées aux types de cellules
+    COLORS = {
+        1: (255, 255, 255),  # EMPTY: white
+        0: (128, 128, 128),  # OBSTACLE: grey
+        2: (255, 255, 255),  # AGENT_WITHOUT_OBJECT: agent image
+        3: (255, 255, 255),  # AGENT_WITH_PRIMARY: agent with primary object image
+        # AGENT_WITH_SECONDARY: agent with secondary object image
+        4: (255, 255, 255),
+        5: (255, 255, 255),  # PRIMARY_OBJECT: primary object image
+        6: (255, 255, 255),  # SECONDARY_OBJECT: secondary object image
+        7: (173, 216, 230),  # EMPTY_INPUT: light blue
+        8: (173, 216, 230),  # INPUT_WITH_OBJECT: input object image
+        9: (255, 200, 128),  # EMPTY_INPUT_CRAFT: light orange
+        10: (255, 200, 128),  # INPUT_CRAFT_WITH_OBJECT: input craft image
+        11: (255, 165, 0),   # EMPTY_OUTPUT_CRAFT: dark orange
+        12: (255, 165, 0),   # OUTPUT_CRAFT_WITH_OBJECT: output craft image
+        13: (255, 182, 193),  # EMPTY_OUTPUT: light red
+        14: (255, 182, 193),  # OUTPUT_WITH_OBJECT: output object image
+    }
+
+    IMAGES = {
+        2: "asset/agent.png",
+        3: "asset/agent_primary_object.png",
+        4: "asset/agent_secondary_object.png",
+        5: "asset/primary_object.png",
+        6: "asset/secondary_object.png",
+        7: "asset/input.png",
+        8: "asset/primary_object.png",
+        9: "asset/input.png",
+        10: "asset/primary_object.png",
+        11: "asset/output.png",
+        12: "asset/secondary_object.png",
+        13: "asset/output.png",
+        14: "asset/secondary_object.png",
+    }
 
     def __init__(self, grid_size=(10, 10), agents_number=3, view_size=3, seed=42, max_cycles=100):
         """
@@ -79,6 +120,18 @@ class WarehouseManagementEnv(ParallelEnv):
         self.directions = [(0, 1), (1, 0), (-1, 0), (0, -1)]
 
         self.reset()
+
+        # Initialisation de Pygame pour le rendu graphique
+        pygame.init()
+        self.screen = pygame.display.set_mode(self.WINDOW_SIZE)
+        pygame.display.set_caption("Warehouse Management Visualization")
+        self.clock = pygame.time.Clock()
+        self.loaded_images = {key: pygame.image.load(os.path.join(os.path.dirname(
+            os.path.abspath(__file__)), path)) if path else None for key, path in self.IMAGES.items()}
+        for key in self.loaded_images:
+            if self.loaded_images[key]:
+                self.loaded_images[key] = pygame.transform.scale(
+                    self.loaded_images[key], (self.CELL_SIZE, self.CELL_SIZE))
 
     def reset(self):
         """
@@ -138,15 +191,14 @@ class WarehouseManagementEnv(ParallelEnv):
         observations = {}
         for agent in self.agents:
             x, y = self.agent_positions[agent]
-            slice_x = slice(max(0, x - self.view_size),
-                            min(self.grid_size[0], x + self.view_size + 1))
-            slice_y = slice(max(0, y - self.view_size),
-                            min(self.grid_size[1], y + self.view_size + 1))
-            obs = self.grid[slice_x, slice_y]
-            padded_obs = np.full(
-                (self.view_size * 2 + 1, self.view_size * 2 + 1), self.EMPTY)
-            padded_obs[: obs.shape[0], : obs.shape[1]] = obs
-            obs_flat = padded_obs.flatten()
+            slice_x = slice(x, x + (2 * self.view_size) + 1)
+            slice_y = slice(y, y + (2 * self.view_size) + 1)
+            obs = deepcopy(self.grid)
+            obs[x, y] = self.agent_states[agent]
+            obs = np.pad(obs, pad_width=((self.view_size, self.view_size), (self.view_size, self.view_size)), mode='constant',
+                         constant_values=self.OBSTACLE)
+            obs = obs[slice_x, slice_y]
+            obs_flat = obs.flatten()
             observations[agent] = obs_flat  # padded_obs[..., np.newaxis]
         return observations
 
@@ -175,8 +227,9 @@ class WarehouseManagementEnv(ParallelEnv):
         self.num_cycle += 1
 
         for ag in self.agents:
-            self.dones[ag] = self.dones[ag] or self._check_termination(ag)
-            self.dones["__all__"] = True
+            if self._check_termination(ag):
+                self.dones[ag] = True
+                self.dones["__all__"] = True
 
         if self.num_cycle >= self.max_cycles:
             self.dones["__all__"] = True
@@ -220,12 +273,11 @@ class WarehouseManagementEnv(ParallelEnv):
                 for direction in self.directions:
                     next_x, next_y = x + direction[0] if 0 <= x + direction[0] and x + direction[0] < self.grid.shape[0] else x, \
                         y + direction[1] if 0 <= y + direction[1] and y + \
-                        direction[1] <= self.grid.shape[1] else y
-                    if next_x > 0 and next_x < self.grid_size[0] and next_y > 0 and next_y < self.grid_size[1]:
-                        if self.grid[next_x, next_y] == transform_data[0]:
-                            self.agent_states[agent] = transform_data[1]
-                            self.grid[next_x, next_y] = transform_data[2]
-                            return
+                        direction[1] < self.grid.shape[1] else y
+                    if self.grid[next_x, next_y] == transform_data[0]:
+                        self.agent_states[agent] = transform_data[1]
+                        self.grid[next_x, next_y] = transform_data[2]
+                        return
 
     def _drop_object(self, agent: str):
         """
@@ -239,7 +291,7 @@ class WarehouseManagementEnv(ParallelEnv):
                 for direction in self.directions:
                     next_x, next_y = x + direction[0] if 0 <= x + direction[0] and x + direction[0] < self.grid.shape[0] else x, \
                         y + direction[1] if 0 <= y + direction[1] and y + \
-                        direction[1] <= self.grid.shape[1] else y
+                        direction[1] < self.grid.shape[1] else y
                     if self.grid[next_x, next_y] == transform_data[0]:
                         self.agent_states[agent] = transform_data[1]
                         self.grid[next_x, next_y] = transform_data[2]
@@ -339,16 +391,31 @@ class WarehouseManagementEnv(ParallelEnv):
         """
         Render the current state of the grid.
         """
-        grid = self.grid.copy()
+        self.screen.fill((0, 0, 0))
+        for row in range(self.grid.shape[0]):
+            for col in range(self.grid.shape[1]):
+                cell_value = self.grid[row, col]
+                cell_rect = pygame.Rect(
+                    col * self.CELL_SIZE, row * self.CELL_SIZE, self.CELL_SIZE, self.CELL_SIZE)
+                color = self.COLORS.get(cell_value, (0, 0, 0))
+                pygame.draw.rect(self.screen, color, cell_rect)
+                if cell_value in self.loaded_images and self.loaded_images[cell_value]:
+                    self.screen.blit(
+                        self.loaded_images[cell_value], (col * self.CELL_SIZE, row * self.CELL_SIZE))
         for agent, (x, y) in self.agent_positions.items():
-            grid[x, y] = self.AGENT_WITHOUT_OBJECT
-        print(grid)
+            agent_image = self.loaded_images.get(
+                self.agent_states[agent], self.loaded_images[2])
+            if agent_image:
+                self.screen.blit(
+                    agent_image, (y * self.CELL_SIZE, x * self.CELL_SIZE))
+        pygame.display.flip()
+        self.clock.tick(5)
 
     def close(self):
         """
         Close the environment.
         """
-        pass
+        pygame.quit()
 
 
 if __name__ == "__main__":
@@ -365,17 +432,44 @@ if __name__ == "__main__":
         6: "drop"
     }
 
+    # Mapping des touches pour les actions
+    KEY_ACTIONS = {
+        pygame.K_UP: 1,     # Move up
+        pygame.K_DOWN: 2,   # Move down
+        pygame.K_LEFT: 3,   # Move left
+        pygame.K_RIGHT: 4,  # Move right
+        pygame.K_a: 5,  # Pick up
+        pygame.K_q: 6  # Drop
+    }
+
+    manual_agent = "agent_0"
+
     # Réinitialiser l'environnement
     observations = warehouse_env.reset()
     print("=== État initial de la grille ===")
     warehouse_env.render()
 
-    for step in range(10):  # Effectuer 10 étapes
+    for step in range(200):  # Effectuer 10 étapes
         print(f"\n=== Étape {step + 1} ===")
 
         # Actions aléatoires pour tous les agents
-        actions = {agent: warehouse_env.action_space[agent].sample(
-        ) for agent in warehouse_env.agents}
+        actions = {agent: warehouse_env.action_space(
+            agent).sample() for agent in warehouse_env.agents}
+
+        # Gestion des événements (clavier)
+        running = True
+        while (running):
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    break
+                elif event.type == pygame.KEYDOWN:
+                    # Assigner une action à l'agent contrôlé manuellement
+                    if event.key in KEY_ACTIONS:
+                        actions[manual_agent] = KEY_ACTIONS[event.key]
+                        running = False
+                        break
+
         print(f"Actions des agents: ", {
               agent: number_to_action[action] for agent, action in actions.items()})
 
