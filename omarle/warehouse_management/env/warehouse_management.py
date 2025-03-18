@@ -10,6 +10,8 @@ from typing import Dict, Tuple
 from copy import deepcopy
 from pettingzoo.utils.conversions import from_parallel_wrapper
 
+NUMBER_FONT_SIZE = 28
+
 
 def raw_env(kwargs): from_parallel_wrapper(parallel_env(**kwargs))
 
@@ -126,6 +128,7 @@ class WarehouseManagementEnv(ParallelEnv):
         self.screen = pygame.display.set_mode(self.WINDOW_SIZE)
         pygame.display.set_caption("Warehouse Management Visualization")
         self.clock = pygame.time.Clock()
+        self.font = pygame.font.Font(None, NUMBER_FONT_SIZE)
         self.loaded_images = {key: pygame.image.load(os.path.join(os.path.dirname(
             os.path.abspath(__file__)), path)) if path else None for key, path in self.IMAGES.items()}
         for key in self.loaded_images:
@@ -178,7 +181,7 @@ class WarehouseManagementEnv(ParallelEnv):
         Place agents in their initial positions.
         """
         self.agent_positions = {
-            agent: (i + 1, 1) for i, agent in enumerate(self.agents)
+            agent: (i + 4, 2) for i, agent in enumerate(self.agents)
         }
         self.agent_states = {
             agent: self.AGENT_WITHOUT_OBJECT for agent in self.agents}
@@ -391,6 +394,7 @@ class WarehouseManagementEnv(ParallelEnv):
         """
         Render the current state of the grid.
         """
+        pygame.event.get()
         self.screen.fill((0, 0, 0))
         for row in range(self.grid.shape[0]):
             for col in range(self.grid.shape[1]):
@@ -403,11 +407,18 @@ class WarehouseManagementEnv(ParallelEnv):
                     self.screen.blit(
                         self.loaded_images[cell_value], (col * self.CELL_SIZE, row * self.CELL_SIZE))
         for agent, (x, y) in self.agent_positions.items():
+
+            # Render the number as text
+            number_text = self.font.render(
+                str(agent.split("_")[1]), True, (0, 0, 0))
+
             agent_image = self.loaded_images.get(
-                self.agent_states[agent], self.loaded_images[2])
+                self.agent_states[agent], self.loaded_images[2]).copy()
             if agent_image:
+                agent_image.blit(number_text, (x+18, y+20))
                 self.screen.blit(
                     agent_image, (y * self.CELL_SIZE, x * self.CELL_SIZE))
+
         pygame.display.flip()
         self.clock.tick(5)
 
