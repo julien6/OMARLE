@@ -123,7 +123,7 @@ class WarehouseManagementEnv(ParallelEnv):
 
         self.reset()
 
-        # Initialisation de Pygame pour le rendu graphique
+        # PyGame initialization for graphical rendering
         pygame.init()
         self.screen = pygame.display.set_mode(self.WINDOW_SIZE)
         pygame.display.set_caption("Warehouse Management Visualization")
