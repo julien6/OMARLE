@@ -123,19 +123,6 @@ class WarehouseManagementEnv(ParallelEnv):
 
         self.reset()
 
-        # PyGame initialization for graphical rendering
-        pygame.init()
-        self.screen = pygame.display.set_mode(self.WINDOW_SIZE)
-        pygame.display.set_caption("Warehouse Management Visualization")
-        self.clock = pygame.time.Clock()
-        self.font = pygame.font.Font(None, NUMBER_FONT_SIZE)
-        self.loaded_images = {key: pygame.image.load(os.path.join(os.path.dirname(
-            os.path.abspath(__file__)), path)) if path else None for key, path in self.IMAGES.items()}
-        for key in self.loaded_images:
-            if self.loaded_images[key]:
-                self.loaded_images[key] = pygame.transform.scale(
-                    self.loaded_images[key], (self.CELL_SIZE, self.CELL_SIZE))
-
     def reset(self):
         """
         Resets the environment to its initial state.
@@ -394,17 +381,32 @@ class WarehouseManagementEnv(ParallelEnv):
         """
         Render the current state of the grid.
         """
-        pygame.event.get()
-        self.screen.fill((0, 0, 0))
+
+        if not hasattr(self, "_render_initialized"):
+            # PyGame initialization for graphical rendering
+            pygame.init()
+            self.clock = pygame.time.Clock()
+            self.font = pygame.font.Font(None, NUMBER_FONT_SIZE)
+            self.loaded_images = {key: pygame.image.load(os.path.join(os.path.dirname(
+                os.path.abspath(__file__)), path)) if path else None for key, path in self.IMAGES.items()}
+            for key in self.loaded_images:
+                if self.loaded_images[key]:
+                    self.loaded_images[key] = pygame.transform.scale(
+                        self.loaded_images[key], (self.CELL_SIZE, self.CELL_SIZE))
+            self._render_initialized = True
+            self._display_initialized = False
+
+        rendered_image = pygame.Surface((500, 500))
+        rendered_image.fill((0, 0, 0))
         for row in range(self.grid.shape[0]):
             for col in range(self.grid.shape[1]):
                 cell_value = self.grid[row, col]
                 cell_rect = pygame.Rect(
                     col * self.CELL_SIZE, row * self.CELL_SIZE, self.CELL_SIZE, self.CELL_SIZE)
                 color = self.COLORS.get(cell_value, (0, 0, 0))
-                pygame.draw.rect(self.screen, color, cell_rect)
+                pygame.draw.rect(rendered_image, color, cell_rect)
                 if cell_value in self.loaded_images and self.loaded_images[cell_value]:
-                    self.screen.blit(
+                    rendered_image.blit(
                         self.loaded_images[cell_value], (col * self.CELL_SIZE, row * self.CELL_SIZE))
         for agent, (x, y) in self.agent_positions.items():
 
@@ -416,15 +418,23 @@ class WarehouseManagementEnv(ParallelEnv):
                 self.agent_states[agent], self.loaded_images[2]).copy()
             if agent_image:
                 agent_image.blit(number_text, (x+18, y+20))
-                self.screen.blit(
+                rendered_image.blit(
                     agent_image, (y * self.CELL_SIZE, x * self.CELL_SIZE))
 
-        pygame.display.flip()
-        self.clock.tick(5)
+        if mode == "human":
+            if not self._display_initialized:
+                self.screen = pygame.display.set_mode(self.WINDOW_SIZE)
+                pygame.display.set_caption(
+                    "Warehouse Management Visualization")
+                self._display_initialized = True
+
+            pygame.event.get()
+            self.screen.blit(rendered_image, (0, 0))
+            pygame.display.flip()
+            self.clock.tick(5)
 
         if mode == 'rgb_array':
-            surface = pygame.display.get_surface()
-            array = pygame.surfarray.array3d(surface)
+            array = pygame.surfarray.array3d(rendered_image)
             array = np.transpose(array, (1, 0, 2))
             return array
 
