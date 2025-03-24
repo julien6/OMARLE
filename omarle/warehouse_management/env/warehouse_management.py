@@ -422,6 +422,12 @@ class WarehouseManagementEnv(ParallelEnv):
         pygame.display.flip()
         self.clock.tick(5)
 
+        if mode == 'rgb_array':
+            surface = pygame.display.get_surface()
+            array = pygame.surfarray.array3d(surface)
+            array = np.transpose(array, (1, 0, 2))
+            return array
+
     def close(self):
         """
         Close the environment.
@@ -443,7 +449,6 @@ if __name__ == "__main__":
         6: "drop"
     }
 
-    # Mapping des touches pour les actions
     KEY_ACTIONS = {
         pygame.K_UP: 1,     # Move up
         pygame.K_DOWN: 2,   # Move down
@@ -455,19 +460,16 @@ if __name__ == "__main__":
 
     manual_agent = "agent_0"
 
-    # Réinitialiser l'environnement
     observations = warehouse_env.reset()
-    print("=== État initial de la grille ===")
+    print("=== Initial grid state ===")
     warehouse_env.render()
 
-    for step in range(200):  # Effectuer 10 étapes
-        print(f"\n=== Étape {step + 1} ===")
+    for step in range(200):
+        print(f"\n=== Step {step + 1} ===")
 
-        # Actions aléatoires pour tous les agents
         actions = {agent: warehouse_env.action_space(
             agent).sample() for agent in warehouse_env.agents}
 
-        # Gestion des événements (clavier)
         running = True
         while (running):
             for event in pygame.event.get():
@@ -475,28 +477,20 @@ if __name__ == "__main__":
                     running = False
                     break
                 elif event.type == pygame.KEYDOWN:
-                    # Assigner une action à l'agent contrôlé manuellement
                     if event.key in KEY_ACTIONS:
                         actions[manual_agent] = KEY_ACTIONS[event.key]
                         running = False
                         break
 
-        print(f"Actions des agents: ", {
-              agent: number_to_action[action] for agent, action in actions.items()})
-
-        # Effectuer une étape
         observations, rewards, terminated, truncated = warehouse_env.step(
             actions)
 
-        # Afficher la grille après l'étape
         warehouse_env.render()
 
-        # Afficher les récompenses
-        print(f"Récompenses: {rewards}")
+        print(f"Rewards: {rewards}")
 
-        # Vérifier si tous les agents ont terminé
         if all(terminated.values()):
-            print("\nTous les agents ont terminé leurs tâches.")
+            print("\nAll agents have finished.")
             break
 
     warehouse_env.close()
