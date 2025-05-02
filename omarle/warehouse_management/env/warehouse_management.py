@@ -8,12 +8,12 @@ from pettingzoo.utils.env import ParallelEnv
 from pettingzoo.utils import wrappers
 from typing import Dict, Tuple
 from copy import deepcopy
-from pettingzoo.utils.conversions import from_parallel_wrapper
+from pettingzoo.utils.conversions import aec_wrapper_fn
 
 NUMBER_FONT_SIZE = 28
 
 
-def raw_env(kwargs): from_parallel_wrapper(parallel_env(**kwargs))
+def raw_env(kwargs): aec_wrapper_fn(parallel_env(**kwargs))
 
 
 def env(**kwargs):
